@@ -1,0 +1,14 @@
+{
+    "require" :{
+        "noahbuscher/macaw": "dev-master",
+        "illuminate/database": "*",
+        "intervention/image": "^2.3"
+     },
+     "autoload": {
+        "classmap" : [
+            "app/controllers",
+            "app/models"
+        ]
+     }
+     
+}
