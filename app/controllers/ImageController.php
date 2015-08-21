@@ -23,6 +23,10 @@ class ImageController extends BaseController{
 
 	protected $param		  = array(); //图片处理参数
 
+	protected $format		  = '';      //输出图片的格式
+
+	protected $quality		  = 85;    //输出图片的质量 默认85
+
 	/**
 	 * 构造函数
 	 * 处理图片信息和处理参数
@@ -120,59 +124,84 @@ class ImageController extends BaseController{
 	public function exif($param){
 		var_dump($this->img->exif());
 	}
+
 	//图片基本处理
 	public function imageView($param){
+		$origin_w = $this->imgInfo['width']; //原图宽
+		$origin_h = $this->imgInfo['height']; //原图高
 
-		$w = $param['w']?$param['w']:null;	//宽
-		$h = $param['h']?$param['h']:null;  //高
+		$width 	= intval($param['w']);//取整
+		$height = intval($param['h']);//取整
+
+		//只存在宽（或高），宽（或高）默认和高（或宽）相同
+		//
+		$w = $width?$width:($height?$height:null);	//宽
+		$h = $height?$height:($width?$width:null);  //高
+
+		if($w==null && $h==null){  //都不存在直接返回原图
+			echo $this->img->response();die;
+		}
+
+		//和原图宽高相比，默认不超过原图
+		$w = ($w > $origin_w)? $origin_w : $w;
+		$h = ($h > $origin_h)? $origin_h : $h;
+
+		// echo 'w:',$w,'----h:',$h;die;
 
 		switch($param['mode']){
 			case 1:
 				// /1/w/<Width>/h/<Height> 限定缩略图的宽最少为<Width>，高最少为<Height>进行等比缩放，居中裁剪。
 				// 如果只指定 w 参数或只指定 h 参数，代表限定为长宽相等的正方形。
-				
-				if($w==null && $h==null){
-					echo $this->img->response();die;
-				}
-				$this->img->resize($w,$h,function($constraint){
-					$constraint->aspectRatio();
-				});
+
+				$this->ShortEdge($w, $h, $origin_w/$origin_h);
+
+				$this->img->crop($w,$h);  //居中裁剪（不超过原图大小）
 
 				break;
+
 			case 2:
 				//限定缩略图的宽最多为<Width>，高最多为<Height>，进行等比缩放，不裁剪。
-				//
-				if($w==null && $h==null){
-					echo $this->img->response();die;
-				}
-				$this->img->resize($w,$h,function($constraint){
-					$constraint->aspectRatio();
-				});
+				
+				$this->LongEdge($w, $h, $origin_w/$origin_h);
 
 				break;
 			case 3:
 				//限定缩略图的宽最少为<Width>，高最少为<Height>，进行等比缩放，不裁剪。
 				//如果只指定 w 参数或只指定 h 参数，代表长宽限定为同样的值。
+				//你可以理解为模式1是模式3的结果再做居中裁剪得到的。
+				
+				$this->ShortEdge($w, $h, $origin_w/$origin_h);
 
 				break;
-			case 4:
-				//限定缩略图的长边最少为<LongEdge>，短边最少为<ShortEdge>，进行等比缩放，不裁剪。
-				//这个模式很适合在手持设备做图片的全屏查看（把这里的长边短边分别设为手机屏幕的分辨率即可），生成的图片尺寸刚好充满整个屏幕（某一个边可能会超出屏幕）。
 
-				break;
-			case 5:
-				//限定缩略图的长边最少为<LongEdge>，短边最少为<ShortEdge>，进行等比缩放，居中裁剪。如果只指定 w 参数或只指定 h 参数，表示长边短边限定为同样的值。同上模式4，但超出限定的矩形部分会被裁剪
-
-				break;
 			default:
 				$this->error('unsupport mode不支持该模式！');	//临时错误处理方法
 				break;
-
 		}
+
+		//后续处理 输出的图片格式、图片质量
+		// if(!empty($param['format']) && in_array($param['format'], array('jpg', 'png', 'gif', 'tif', 'bmp') )){
+		// 	$this->format = $param['format'];
+		// }
+		//质量大于 50 小于100 默认 85
+		// if(intval($param['q']) &&  intval($param['q'])>50 && intval($param['q'])<100){
+		// 	$this->quality = intval($param['q']);
+		// }
 	}
 	
 	//图片高级处理
-	public function imageMogr(){
+	public function imageMogr($param){var_dump($param);die;
+
+		switch ($param['mode']) {
+			case 'rotate':
+				//旋转
+				$this->img->rotate();
+				break;
+			
+			default:
+				# code...
+				break;
+		}
 	}
 
 	//水印处理
@@ -184,6 +213,57 @@ class ImageController extends BaseController{
 	
 	}
 
+
+	/**
+	 * 以短边为标准 进行缩放（宽最少为$width 高 最少为 $height）
+	 * @param [type] $width  缩放后的宽
+	 * @param [type] $height 缩放后的高
+	 * @param [type] $radio   要缩放图片的类型 >1 ：横图（高比宽大） 或 <1 :竖图（宽比高大）
+	 */
+	private function ShortEdge($width, $height, $radio){
+		//以短边为缩放标准
+		if($width < $height * $radio){
+
+			//要缩放的宽，小于     比按高缩放的宽
+			$this->img->heighten($height, function ($constraint) {
+			    $constraint->upsize();
+			});
+
+		}else{
+			//要缩放的宽，大于等于 比按高缩放的宽
+			$this->img->widen($width, function ($constraint) {
+			    $constraint->upsize();
+			});
+		}
+	}
+
+	/**
+	 * 以长边为标准 进行缩放（宽最多为$width 高 最多为 $height）
+	 * @param [type] $width  [description]
+	 * @param [type] $height [description]
+	 * @param [type] $radio  [description]
+	 */
+	private function LongEdge($width, $height, $radio){
+		//以长边为缩放标准
+		if($width < $height * $radio){
+			//要缩放的宽，大于等于 比按高缩放的宽
+			$this->img->widen($width, function ($constraint) {
+			    $constraint->upsize();
+			});
+			
+		}else{
+			//要缩放的宽，小于     比按高缩放的宽
+			$this->img->heighten($height, function ($constraint) {
+			    $constraint->upsize();
+			});
+		}
+	}
+
+	/**
+	 * 临时错误输出函数
+	 * @param  [string] $info [错误信息]
+	 * @return [type]       [description]
+	 */
 	public function error($info){
 		die($info.'<br/>错误位置：'.__FILE__.'----'.__LINE__.'行：');
 	}
